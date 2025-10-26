@@ -11,6 +11,17 @@ const io = new Server(server, {
 
 app.use(express.json());
 
+/**
+ * {
+ *   id: string,
+ *   videoUrl: string,
+ *   createdAt: Date,
+ *   host: string | null,
+ *   viewers: Set<string>,
+ *   currentTime: number,
+ *   isPlaying: boolean
+ * }
+ */
 const rooms = new Map();
 
 app.post("/api/rooms", (req, res) => {
@@ -23,7 +34,9 @@ app.post("/api/rooms", (req, res) => {
     videoUrl,
     createdAt: new Date(),
     host: null,
-    viewers: new Set()
+    viewers: new Set(),
+    currentTime: 0,
+    isPlaying: false,
   });
 
   console.log(`🎬 Created room: ${roomId} (${videoUrl})`);
@@ -33,7 +46,12 @@ app.post("/api/rooms", (req, res) => {
 app.get("/api/rooms/:roomId", (req, res) => {
   const room = rooms.get(req.params.roomId);
   if (!room) return res.status(404).json({ error: "Room not found" });
-  res.json({ id: room.id, videoUrl: room.videoUrl });
+  res.json({
+    id: room.id,
+    videoUrl: room.videoUrl,
+    currentTime: room.currentTime,
+    isPlaying: room.isPlaying,
+  });
 });
 
 io.on("connection", socket => {
@@ -48,12 +66,37 @@ io.on("connection", socket => {
 
     socket.join(roomId);
     room.viewers.add(userId);
-    console.log(`👥 User ${userId} joined ${roomId}`);
+
+    let currentTime = room.currentTime;
+    if (room.isPlaying && room.lastUpdate) {
+      const delta = (Date.now() - room.lastUpdate) / 1000;
+      currentTime += delta;
+    }
+
+    socket.emit("syncState", {
+      videoUrl: room.videoUrl,
+      currentTime,
+      isPlaying: room.isPlaying,
+    });
 
     socket.to(roomId).emit("userJoined", { userId });
   });
 
   socket.on("videoEvent", ({ roomId, type, currentTime }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+
+    if (type === "play") {
+      room.isPlaying = true;
+      room.lastUpdate = Date.now();
+      room.currentTime = currentTime;
+    } else if (type === "pause") {
+      room.isPlaying = false;
+      room.currentTime = currentTime;
+    } else if (type === "seek") {
+      room.currentTime = currentTime;
+    }
+
     socket.to(roomId).emit("videoEvent", { type, currentTime });
   });
 
