@@ -24,6 +24,19 @@ app.use(express.json());
  */
 const rooms = new Map();
 
+app.get("/api/rooms", (req, res) => {
+  const serializedRooms = Array.from(rooms.values()).map(room => ({
+    id: room.id,
+    videoUrl: room.videoUrl,
+    createdAt: room.createdAt,
+    currentTime: room.currentTime,
+    isPlaying: room.isPlaying,
+    viewerCount: room.viewers.size,
+  }));
+
+  res.json({ rooms: serializedRooms });
+});
+
 app.post("/api/rooms", (req, res) => {
   const { videoUrl } = req.body;
   if (!videoUrl) return res.status(400).json({ error: "videoUrl required" });
